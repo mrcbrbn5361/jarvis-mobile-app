@@ -11,6 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -35,11 +36,13 @@ fun SettingsScreen(viewModel: JarvisViewModel) {
     val selectedModel by viewModel.selectedModel.collectAsState()
     val speechPitch by viewModel.speechPitch.collectAsState()
     val speechRate by viewModel.speechRate.collectAsState()
+    val userName by viewModel.userName.collectAsState()
 
     var inputKey by remember { mutableStateOf(customApiKey) }
     var modelSelector by remember { mutableStateOf(selectedModel) }
     var pitchSlider by remember { mutableStateOf(speechPitch) }
     var rateSlider by remember { mutableStateOf(speechRate) }
+    var inputName by remember { mutableStateOf(userName) }
 
     // Check actual platform permissions
     val micGranted = context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -105,6 +108,32 @@ fun SettingsScreen(viewModel: JarvisViewModel) {
                     )
                 )
 
+                // --- USER NAME HITAP AYARI ---
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                    Icon(imageVector = Icons.Default.Person, contentDescription = "User Name", tint = CyberCyan)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "KULLANICI İSMİ (HİTAP)",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = CyberWhite,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    )
+                }
+
+                OutlinedTextField(
+                    value = inputName,
+                    onValueChange = { inputName = it },
+                    placeholder = { Text("Örn: Bay Stark, Efendim, Mirac", color = CyberMuted) },
+                    modifier = Modifier.fillMaxWidth().testTag("user_name_field"),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = CyberWhite),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = CyberCyan,
+                        unfocusedBorderColor = CyberMuted
+                    )
+                )
+
                 // Model selection Dropdown options (simplified with manual segment buttons)
                 Text(
                     text = "YAPAY ZEKA MODELİ",
@@ -115,27 +144,47 @@ fun SettingsScreen(viewModel: JarvisViewModel) {
                     )
                 )
 
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf("gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash").forEach { model ->
-                        val isSel = modelSelector == model
-                        Button(
-                            onClick = { modelSelector = model },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isSel) CyberCyan else CyberGray
-                            ),
-                            border = if (!isSel) BorderStroke(1.dp, CyberMuted.copy(alpha = 0.4f)) else null
+                    val availableModels = listOf(
+                        "gemini-3.5-flash",
+                        "gemini-3.1-pro-preview",
+                        "gemini-3.1-flash-lite-preview",
+                        "gemini-2.5-flash",
+                        "gemini-2.5-pro"
+                    )
+                    availableModels.chunked(2).forEach { chunk ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(
-                                text = model.replace("gemini-", ""),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isSel) Color.Black else CyberWhite
-                            )
+                            chunk.forEach { model ->
+                                val isSel = modelSelector == model
+                                Button(
+                                    onClick = { modelSelector = model },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isSel) CyberCyan else CyberGray
+                                    ),
+                                    border = if (!isSel) BorderStroke(1.dp, CyberMuted.copy(alpha = 0.4f)) else null,
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        text = model.replace("gemini-", ""),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSel) Color.Black else CyberWhite,
+                                        maxLines = 1,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                            if (chunk.size < 2) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
                         }
                     }
                 }
@@ -196,8 +245,9 @@ fun SettingsScreen(viewModel: JarvisViewModel) {
                 // Voice sound synthesizer test action
                 Button(
                     onClick = {
-                        viewModel.saveConfig(inputKey, modelSelector, rateSlider, pitchSlider)
-                        viewModel.sendMessage("Sistem ayarları güncellendi. Teşekkürler efendim.")
+                        viewModel.saveConfig(inputKey, modelSelector, rateSlider, pitchSlider, inputName)
+                        val greetName = if (inputName.isBlank()) "efendim" else inputName
+                        viewModel.sendMessage("Sistem ayarları güncellendi. Yeni protokoller devrede, $greetName.")
                     },
                     modifier = Modifier.fillMaxWidth().testTag("save_settings_button"),
                     colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)

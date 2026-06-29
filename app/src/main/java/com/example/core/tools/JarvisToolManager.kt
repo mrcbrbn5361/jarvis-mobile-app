@@ -143,6 +143,11 @@ class JarvisToolManager(
                     ),
                     required = listOf("name")
                 )
+            ),
+            FunctionDeclaration(
+                name = "list_installed_apps",
+                description = "Lists all applications installed on the user's device with their display name and package identifier.",
+                parameters = Schema(type = "OBJECT")
             )
         )
         return listOf(Tool(functionDeclarations = functionDeclarations))
@@ -155,6 +160,7 @@ class JarvisToolManager(
         return try {
             val result = when (name) {
                 "open_app" -> openAppTool(args?.get("app_name") ?: "")
+                "list_installed_apps" -> listInstalledAppsTool()
                 "device_info" -> deviceInfoTool()
                 "battery_status" -> batteryStatusTool()
                 "network_info" -> networkInfoTool()
@@ -219,6 +225,24 @@ class JarvisToolManager(
         }
 
         return "'$appName' uygulaması cihazda bulunamadı veya açılamadı."
+    }
+
+    private fun listInstalledAppsTool(): String {
+        val pm = context.packageManager
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val resolvedInfos = pm.queryIntentActivities(mainIntent, 0)
+        if (resolvedInfos.isEmpty()) {
+            return "Cihazda kurulu hiçbir başlatılabilir uygulama bulunamadı veya erişim engellendi."
+        }
+        val appList = resolvedInfos.map {
+            val appLabel = it.loadLabel(pm).toString()
+            val packageName = it.activityInfo.packageName
+            "$appLabel ($packageName)"
+        }.distinct().sorted()
+        
+        return "Cihazda kurulu uygulamaların listesi:\n" + appList.joinToString("\n")
     }
 
     private fun deviceInfoTool(): String {

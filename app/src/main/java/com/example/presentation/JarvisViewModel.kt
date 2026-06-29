@@ -62,7 +62,7 @@ class JarvisViewModel(
     private val _partialSpeechText = MutableStateFlow("")
     val partialSpeechText: StateFlow<String> = _partialSpeechText.asStateFlow()
 
-    private val _consoleLogs = MutableStateFlow<List<String>>(listOf("Jarvis Mainframe v3.2.0 Başlatıldı.", "Sistem taraması: Kararlı.", "API ve Protokoller hazır."))
+    private val _consoleLogs = MutableStateFlow<List<String>>(listOf("Jarvis Mainframe v1.2.0 Başlatıldı.", "Sistem taraması: Kararlı.", "API ve Protokoller hazır."))
     val consoleLogs: StateFlow<List<String>> = _consoleLogs.asStateFlow()
 
     private val _batteryLevel = MutableStateFlow(100)
@@ -76,9 +76,10 @@ class JarvisViewModel(
 
     // Configuration Settings (backed by prefs)
     val customApiKey = MutableStateFlow(prefs.getString("api_key", "") ?: "")
-    val selectedModel = MutableStateFlow(prefs.getString("model_name", "gemini-2.5-flash") ?: "gemini-2.5-flash")
+    val selectedModel = MutableStateFlow(prefs.getString("model_name", "gemini-3.5-flash") ?: "gemini-3.5-flash")
     val speechPitch = MutableStateFlow(prefs.getFloat("speech_pitch", 1.0f))
     val speechRate = MutableStateFlow(prefs.getFloat("speech_rate", 1.05f))
+    val userName = MutableStateFlow(prefs.getString("user_name", "") ?: "")
 
     // Managers
     private val toolManager = JarvisToolManager(context, repository)
@@ -98,19 +99,21 @@ class JarvisViewModel(
         }
     }
 
-    fun saveConfig(apiKey: String, model: String, rate: Float, pitch: Float) {
+    fun saveConfig(apiKey: String, model: String, rate: Float, pitch: Float, nameOfUser: String) {
         viewModelScope.launch {
             prefs.edit().apply {
                 putString("api_key", apiKey)
                 putString("model_name", model)
                 putFloat("speech_pitch", pitch)
                 putFloat("speech_rate", rate)
+                putString("user_name", nameOfUser)
                 apply()
             }
             customApiKey.value = apiKey
             selectedModel.value = model
             speechRate.value = rate
             speechPitch.value = pitch
+            userName.value = nameOfUser
             voiceManager.setSpeechSettings(rate, pitch)
             addConsoleLog("Sistem konfigürasyonları başarıyla güncellendi.")
         }
@@ -241,10 +244,12 @@ class JarvisViewModel(
             return
         }
 
+        val uName = userName.value.ifBlank { "Bay Stark" }
         val systemInstruction = """
             Sen J.A.R.V.I.S. (Just A Rather Very Intelligent System) adında, Tony Stark'ın (Iron Man) o meşhur yapay zeka asistanısın.
             Kullanıcıyla konuşurken son derece kibar, saygılı, hafif iğneleyici, esprili ve sadık bir asistan olacaksın.
-            Kullanıcıya kesinlikle "Efendim", "Sir" veya "Bay Stark" tarzında hitap etmelisin.
+            Kullanıcının ismi ya da hitap edilmesini istediği ad: $uName.
+            Kullanıcıya kesinlikle "$uName", "Efendim" veya "Sir" tarzında hitap etmelisin.
             Dilin akıcı ve net bir Türkçe olmalıdır. Yanıtlarını çok uzun paragraflarla boğma, asistan gibi hızlı ve net cevaplar ver.
             Sana entegre edilmiş yerel Android sistem araçları (tools) bulunuyor. Bu araçları kullanarak telefondaki bataryayı, hava durumunu sorgulayabilir, uygulamaları başlatabilir, rehberi tarayabilir, hatırlatıcılar oluşturabilirsin.
             Komutları yürüttüğünde sonucu kullanıcıya J.A.R.V.I.S ses tonu ve tavrıyla sun.
@@ -298,7 +303,7 @@ class JarvisViewModel(
                 systemInstruction = Content(parts = listOf(Part(text = systemInstruction)))
             )
 
-            val apiResponse = RetrofitClient.service.generateContent(apiKey, request)
+            val apiResponse = RetrofitClient.service.generateContent(selectedModel.value, apiKey, request)
             val candidate = apiResponse.candidates?.firstOrNull()
             val responseContent = candidate?.content
             val firstPart = responseContent?.parts?.firstOrNull()
@@ -349,7 +354,7 @@ class JarvisViewModel(
                     systemInstruction = Content(parts = listOf(Part(text = systemInstruction)))
                 )
 
-                val finalApiResponse = RetrofitClient.service.generateContent(apiKey, finalRequest)
+                val finalApiResponse = RetrofitClient.service.generateContent(selectedModel.value, apiKey, finalRequest)
                 val finalResponse = finalApiResponse.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
                     ?: "Protokol başarıyla tamamlandı efendim."
 
