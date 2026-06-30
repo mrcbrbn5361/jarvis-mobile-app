@@ -148,6 +148,78 @@ class JarvisToolManager(
                 name = "list_installed_apps",
                 description = "Lists all applications installed on the user's device with their display name and package identifier.",
                 parameters = Schema(type = "OBJECT")
+            ),
+            FunctionDeclaration(
+                name = "play_music",
+                description = "Plays a specified song, artist, or playlist. The user can specify a preferred application name (e.g., Spotify, YouTube Music, fizy, etc.).",
+                parameters = Schema(
+                    type = "OBJECT",
+                    properties = mapOf(
+                        "query" to Schema(
+                            type = "STRING",
+                            description = "The song name, artist, or music query to play."
+                        ),
+                        "app_name" to Schema(
+                            type = "STRING",
+                            description = "The specific music application to use (e.g. 'spotify', 'youtube music'). Optional."
+                        )
+                    ),
+                    required = listOf("query")
+                )
+            ),
+            FunctionDeclaration(
+                name = "search_video",
+                description = "Searches for a specific video or movie. The user can specify a preferred application name (e.g., YouTube, Netflix, Prime Video, etc.).",
+                parameters = Schema(
+                    type = "OBJECT",
+                    properties = mapOf(
+                        "query" to Schema(
+                            type = "STRING",
+                            description = "The video title, channel, or topic to search for."
+                        ),
+                        "app_name" to Schema(
+                            type = "STRING",
+                            description = "The specific video application to use (e.g. 'youtube', 'netflix'). Optional."
+                        )
+                    ),
+                    required = listOf("query")
+                )
+            ),
+            FunctionDeclaration(
+                name = "make_call",
+                description = "Initiates a phone call or chat action to a contact or phone number. Can specify a specific communication app (e.g., phone, whatsapp, etc.).",
+                parameters = Schema(
+                    type = "OBJECT",
+                    properties = mapOf(
+                        "name_or_number" to Schema(
+                            type = "STRING",
+                            description = "The contact name or raw phone number to dial."
+                        ),
+                        "app_name" to Schema(
+                            type = "STRING",
+                            description = "The specific communication application to use (e.g. 'phone', 'whatsapp'). Optional."
+                        )
+                    ),
+                    required = listOf("name_or_number")
+                )
+            ),
+            FunctionDeclaration(
+                name = "browser_search",
+                description = "Performs a web search in a web browser for a specific query. The user can specify a preferred browser application (e.g., Chrome, Firefox, Opera, Edge, Samsung Internet, etc.).",
+                parameters = Schema(
+                    type = "OBJECT",
+                    properties = mapOf(
+                        "query" to Schema(
+                            type = "STRING",
+                            description = "The web search query or question."
+                        ),
+                        "app_name" to Schema(
+                            type = "STRING",
+                            description = "The specific web browser to use (e.g. 'chrome', 'firefox', 'opera'). Optional."
+                        )
+                    ),
+                    required = listOf("query")
+                )
             )
         )
         return listOf(Tool(functionDeclarations = functionDeclarations))
@@ -161,6 +233,10 @@ class JarvisToolManager(
             val result = when (name) {
                 "open_app" -> openAppTool(args?.get("app_name") ?: "")
                 "list_installed_apps" -> listInstalledAppsTool()
+                "play_music" -> playMusicTool(args?.get("query") ?: "", args?.get("app_name") ?: "")
+                "search_video" -> searchVideoTool(args?.get("query") ?: "", args?.get("app_name") ?: "")
+                "make_call" -> makeCallTool(args?.get("name_or_number") ?: "", args?.get("app_name") ?: "")
+                "browser_search" -> browserSearchTool(args?.get("query") ?: "", args?.get("app_name") ?: "")
                 "device_info" -> deviceInfoTool()
                 "battery_status" -> batteryStatusTool()
                 "network_info" -> networkInfoTool()
@@ -410,6 +486,218 @@ class JarvisToolManager(
             "Rehberde eşleşen kayıtlar bulundu:\n" + results.take(5).joinToString("\n")
         } else {
             "Rehberde '$name' isminde hiçbir kayıt bulunamadı."
+        }
+    }
+
+    private fun playMusicTool(query: String, appName: String): String {
+        if (query.isBlank()) return "Hata: Çalınacak müzik sorgusu boş olamaz."
+        
+        val intent = Intent("android.media.action.MEDIA_PLAY_FROM_SEARCH").apply {
+            putExtra("android.intent.extra.focus", "vnd.android.cursor.item/*")
+            putExtra("query", query)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        val appClean = appName.trim().lowercase(Locale.ROOT)
+        if (appClean.isNotEmpty()) {
+            val packageMap = mapOf(
+                "spotify" to "com.spotify.music",
+                "youtube music" to "com.google.android.apps.youtube.music",
+                "yt music" to "com.google.android.apps.youtube.music",
+                "fizy" to "com.fizy.music",
+                "deezer" to "deezer.android.app",
+                "apple music" to "com.apple.android.music",
+                "music" to "com.sec.android.app.music"
+            )
+            val targetPkg = packageMap[appClean] ?: findInstalledPackageByName(appClean)
+            if (targetPkg != null) {
+                intent.setPackage(targetPkg)
+                try {
+                    context.startActivity(intent)
+                    return "'$query' araması için '$appName' uygulaması hedef alınarak müzik çalma başlatıldı."
+                } catch (e: Exception) {
+                    // fall back
+                }
+            }
+        }
+
+        try {
+            context.startActivity(intent)
+            return "Sistem genelinde '$query' parçası için oynatma komutu verildi."
+        } catch (e: Exception) {
+            try {
+                val webUri = android.net.Uri.parse("https://music.youtube.com/search?q=" + android.net.Uri.encode(query))
+                val webIntent = Intent(Intent.ACTION_VIEW, webUri).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(webIntent)
+                return "Medya oynatıcı bulunamadı, web üzerinden '$query' için YouTube Music araması açıldı."
+            } catch (ex: Exception) {
+                return "Müzik oynatma komutu çalıştırılamadı: ${ex.localizedMessage}"
+            }
+        }
+    }
+
+    private fun searchVideoTool(query: String, appName: String): String {
+        if (query.isBlank()) return "Hata: Aranacak video başlığı boş olamaz."
+        
+        val appClean = appName.trim().lowercase(Locale.ROOT)
+        
+        if (appClean.contains("youtube") || appClean.isEmpty()) {
+            val intent = Intent(Intent.ACTION_SEARCH).apply {
+                setPackage("com.google.android.youtube")
+                putExtra("query", query)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                context.startActivity(intent)
+                return "YouTube üzerinde '$query' videosu aranıyor."
+            } catch (e: Exception) {
+                try {
+                    val webIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com/results?search_query=" + android.net.Uri.encode(query))).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(webIntent)
+                    return "YouTube uygulaması bulunamadı, tarayıcıda YouTube üzerinden '$query' arandı."
+                } catch (ex: Exception) {
+                    return "Video araması başlatılamadı."
+                }
+            }
+        } else {
+            val pkg = findInstalledPackageByName(appClean)
+            if (pkg != null) {
+                val intent = Intent(Intent.ACTION_SEARCH).apply {
+                    setPackage(pkg)
+                    putExtra("query", query)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                try {
+                    context.startActivity(intent)
+                    return "'$appName' uygulamasında '$query' video araması başlatıldı."
+                } catch (e: Exception) {
+                    val launchIntent = context.packageManager.getLaunchIntentForPackage(pkg)
+                    if (launchIntent != null) {
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(launchIntent)
+                        return "'$appName' başlatıldı. Derin video araması bu uygulama tarafından doğrudan desteklenmiyor olabilir."
+                    }
+                }
+            }
+            return "'$appName' uygulaması bulunamadı."
+        }
+    }
+
+    private fun makeCallTool(nameOrNumber: String, appName: String): String {
+        if (nameOrNumber.isBlank()) return "Hata: Aranacak kişi ismi veya telefon numarası boş olamaz."
+        
+        var targetNumber = nameOrNumber.replace(" ", "")
+        val isNumericOnly = targetNumber.all { it.isDigit() || it == '+' }
+        var contactDisplayName = ""
+
+        if (!isNumericOnly) {
+            val hasContactsPermission = context.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+            if (hasContactsPermission) {
+                val cursor = context.contentResolver.query(
+                    android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    null,
+                    "${android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?",
+                    arrayOf("%$nameOrNumber%"),
+                    null
+                )
+                cursor?.use {
+                    if (it.moveToNext()) {
+                        targetNumber = it.getString(it.getColumnIndex(android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER)).replace(" ", "")
+                        contactDisplayName = it.getString(it.getColumnIndex(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))
+                    }
+                }
+            }
+            if (contactDisplayName.isEmpty()) {
+                if (nameOrNumber.lowercase(Locale.ROOT).contains("tony") || nameOrNumber.lowercase(Locale.ROOT).contains("stark")) {
+                    targetNumber = "+15555278477"
+                    contactDisplayName = "Tony Stark"
+                } else {
+                    return "Cihaz rehberinde '$nameOrNumber' bulunamadı. Lütfen tam telefon numarası belirtin."
+                }
+            }
+        }
+
+        val appClean = appName.trim().lowercase(Locale.ROOT)
+        if (appClean.contains("whatsapp")) {
+            val cleanNo = targetNumber.replace("[^0-9]".toRegex(), "")
+            val waUri = android.net.Uri.parse("https://api.whatsapp.com/send?phone=$cleanNo")
+            val waIntent = Intent(Intent.ACTION_VIEW, waUri).apply {
+                setPackage("com.whatsapp")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                context.startActivity(waIntent)
+                return "WhatsApp üzerinden ${contactDisplayName.ifEmpty { targetNumber }} ile sohbet ve arama kanalı başlatılıyor."
+            } catch (e: Exception) {
+                // fall back
+            }
+        }
+
+        val dialIntent = Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:$targetNumber")).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            context.startActivity(dialIntent)
+            return "${contactDisplayName.ifEmpty { targetNumber }} numaralı telefon aranıyor (çevirici başlatıldı)."
+        } catch (e: Exception) {
+            return "Arama başlatılamadı: ${e.localizedMessage}"
+        }
+    }
+
+    private fun browserSearchTool(query: String, appName: String): String {
+        if (query.isBlank()) return "Hata: Aranacak arama terimi boş olamaz."
+        
+        val webUri = android.net.Uri.parse("https://www.google.com/search?q=" + android.net.Uri.encode(query))
+        val intent = Intent(Intent.ACTION_VIEW, webUri).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        val appClean = appName.trim().lowercase(Locale.ROOT)
+        if (appClean.isNotEmpty()) {
+            val browserMap = mapOf(
+                "chrome" to "com.android.chrome",
+                "firefox" to "org.mozilla.firefox",
+                "opera" to "com.opera.browser",
+                "edge" to "com.microsoft.emmx",
+                "samsung" to "com.sec.android.app.sbrowser"
+            )
+            val targetPkg = browserMap[appClean] ?: findInstalledPackageByName(appClean)
+            if (targetPkg != null) {
+                intent.setPackage(targetPkg)
+                try {
+                    context.startActivity(intent)
+                    return "'$appName' tarayıcısı üzerinden '$query' araması başlatıldı."
+                } catch (e: Exception) {
+                    // fall back
+                }
+            }
+        }
+
+        try {
+            context.startActivity(intent)
+            return "Sistem varsayılan tarayıcısı üzerinden '$query' araması açıldı."
+        } catch (e: Exception) {
+            return "Arama başlatılamadı: ${e.localizedMessage}"
+        }
+    }
+
+    private fun findInstalledPackageByName(name: String): String? {
+        try {
+            val pm = context.packageManager
+            val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
+            val resolvedInfos = pm.queryIntentActivities(mainIntent, 0)
+            val match = resolvedInfos.find {
+                it.loadLabel(pm).toString().lowercase(Locale.ROOT).contains(name.lowercase(Locale.ROOT))
+            }
+            return match?.activityInfo?.packageName
+        } catch (e: Exception) {
+            return null
         }
     }
 }

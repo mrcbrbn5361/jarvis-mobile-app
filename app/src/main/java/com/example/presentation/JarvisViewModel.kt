@@ -62,7 +62,7 @@ class JarvisViewModel(
     private val _partialSpeechText = MutableStateFlow("")
     val partialSpeechText: StateFlow<String> = _partialSpeechText.asStateFlow()
 
-    private val _consoleLogs = MutableStateFlow<List<String>>(listOf("Jarvis Mainframe v1.2.0 Başlatıldı.", "Sistem taraması: Kararlı.", "API ve Protokoller hazır."))
+    private val _consoleLogs = MutableStateFlow<List<String>>(listOf("Jarvis Mainframe v1.3.0 Başlatıldı.", "Sistem taraması: Kararlı.", "API ve Protokoller hazır."))
     val consoleLogs: StateFlow<List<String>> = _consoleLogs.asStateFlow()
 
     private val _batteryLevel = MutableStateFlow(100)
