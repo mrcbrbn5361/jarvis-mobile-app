@@ -62,7 +62,7 @@ class JarvisViewModel(
     private val _partialSpeechText = MutableStateFlow("")
     val partialSpeechText: StateFlow<String> = _partialSpeechText.asStateFlow()
 
-    private val _consoleLogs = MutableStateFlow<List<String>>(listOf("Jarvis Mainframe v1.3.0 Başlatıldı.", "Sistem taraması: Kararlı.", "API ve Protokoller hazır."))
+    private val _consoleLogs = MutableStateFlow<List<String>>(listOf("Jarvis Mainframe v1.4.0 Başlatıldı.", "Sistem taraması: Kararlı.", "API ve Protokoller hazır."))
     val consoleLogs: StateFlow<List<String>> = _consoleLogs.asStateFlow()
 
     private val _batteryLevel = MutableStateFlow(100)
@@ -246,14 +246,30 @@ class JarvisViewModel(
 
         val uName = userName.value.ifBlank { "Bay Stark" }
         val systemInstruction = """
-            Sen J.A.R.V.I.S. (Just A Rather Very Intelligent System) adında, Tony Stark'ın (Iron Man) o meşhur yapay zeka asistanısın.
-            Kullanıcıyla konuşurken son derece kibar, saygılı, hafif iğneleyici, esprili ve sadık bir asistan olacaksın.
-            Kullanıcının ismi ya da hitap edilmesini istediği ad: $uName.
-            Kullanıcıya kesinlikle "$uName", "Efendim" veya "Sir" tarzında hitap etmelisin.
-            Dilin akıcı ve net bir Türkçe olmalıdır. Yanıtlarını çok uzun paragraflarla boğma, asistan gibi hızlı ve net cevaplar ver.
-            Sana entegre edilmiş yerel Android sistem araçları (tools) bulunuyor. Bu araçları kullanarak telefondaki bataryayı, hava durumunu sorgulayabilir, uygulamaları başlatabilir, rehberi tarayabilir, hatırlatıcılar oluşturabilirsin.
-            Komutları yürüttüğünde sonucu kullanıcıya J.A.R.V.I.S ses tonu ve tavrıyla sun.
+            Sen kullanıcının telefonunu, tüm uygulamalarını ve sistem ayarlarını yöneten gelişmiş bir yapay zeka asistanı olan J.A.R.V.I.S.'sin. Görevin, kullanıcının doğal dilde verdiği komutları analiz etmek ve telefonda doğru aksiyonların alınmasını sağlamaktır.
+
+            [TEMEL ÇALIŞMA PRENSİBİ]
+            1. Sana her kullanıcı girdisiyle birlikte, telefonda yüklü olan güncel "uygulama listesi" ve "cihaz durumu" bir JSON objesi olarak verilecektir.
+            2. Kullanıcının talebini bu listeyle eşleştirerek en uygun uygulamayı ve yapılması gereken işlemi tespit etmelisin.
+            3. Yanıt üretirken her zaman iki ana bölümden oluşan bir JSON çıktısı vermelisin:
+               - "action": Telefonun arka planda çalıştıracağı teknik komut, hedef uygulama paketi (package name) ve parametreler.
+               - "response": Kullanıcıya sesli olarak okunacak doğal, akıllı ve J.A.R.V.I.S. karakterine uygun cevap.
+
+            [SESLENDİRME VE METİN KURALLARI]
+            Kullanıcıya yönelik yazacağın "response" alanı tamamen SESLİ OKUMA için optimize edilmelidir. Ses sentezleyicinin (TTS) hata yapmaması için şu kurallara SIKICA uymalısın:
+            - ASLA yıldız (*), nokta nokta (..), üç nokta (...), iki nokta üst üste (:), hashtag (#), tire (-), alttan tire (_) veya benzeri özel karakterler kullanma.
+            - Vurgu yapmak için kelimeleri büyük harfle yazma veya semboller ekleme.
+            - Cümle bitimlerinde sadece tek bir normal nokta (.) veya soru işareti (?) kullan.
+            - Tarihleri, saatleri ve sayıları TTS motorunun doğru okuyabilmesi için yazıyla yaz (Örn: "saat 14:30" yerine "saat on dört otuz", "3 gün" yerine "üç gün").
+            - Kısaltma kullanma, kelimeleri açık yaz (Örn: "vb." yerine "ve benzeri", "dk" yerine "dakika").
+
+            [EK BİLGİ]
+            - Kullanıcının ismi ya da hitap edilmesini istediği ad: $uName. Kesinlikle "$uName", "Efendim" veya "Sir" tarzında hitap etmelisin.
+            - Dilin akıcı ve net bir Türkçe olmalıdır.
         """.trimIndent()
+
+        val systemContextJson = toolManager.getSystemContextJson()
+        val finalPromptText = "$promptText\n\nCihaz Durumu: $systemContextJson"
 
         // Fetch past logs for chat context (take last 20 for memory efficiency)
         val historyLogs = chatLogs.value.takeLast(20)
@@ -277,7 +293,7 @@ class JarvisViewModel(
                 Content(
                     role = "user",
                     parts = listOf(
-                        Part(text = promptText),
+                        Part(text = finalPromptText),
                         Part(inlineData = InlineData(mimeType = "image/jpeg", data = base64Image))
                     )
                 )
@@ -285,21 +301,21 @@ class JarvisViewModel(
         } else {
             // If the last content was already added by map above, avoid duplication
             val lastAdded = contentsList.lastOrNull()
-            if (lastAdded == null || lastAdded.parts.firstOrNull()?.text != promptText) {
+            if (lastAdded == null || lastAdded.parts.firstOrNull()?.text != finalPromptText) {
                 contentsList.add(
                     Content(
                         role = "user",
-                        parts = listOf(Part(text = promptText))
+                        parts = listOf(Part(text = finalPromptText))
                     )
                 )
             }
         }
 
         try {
-            // Construct request payload with definitions of our local tools
+            // Construct request payload enforcing JSON response
             val request = GenerateContentRequest(
                 contents = contentsList,
-                tools = toolManager.getToolDefinitions(),
+                generationConfig = GenerationConfig(responseMimeType = "application/json"),
                 systemInstruction = Content(parts = listOf(Part(text = systemInstruction)))
             )
 
@@ -308,61 +324,23 @@ class JarvisViewModel(
             val responseContent = candidate?.content
             val firstPart = responseContent?.parts?.firstOrNull()
 
-            if (firstPart?.functionCall != null) {
-                // GEMINI INSTRUCTED TO EXECUTE A TOOL
-                val functionCall = firstPart.functionCall
-                val toolName = functionCall.name
-                val toolArgs = functionCall.args
-
-                addConsoleLog("Yapay Zeka Protokolü Tetiklendi: $toolName()")
-                _orbState.value = OrbState.Thinking
-
-                // Execute the actual local tool
-                val executionMap = toolManager.executeTool(toolName, toolArgs)
-                val executionResult = executionMap["response"] ?: "İşlem tamamlandı fakat geri dönüş yok."
-
-                addConsoleLog("Protokol Sonucu: $executionResult")
-
-                // Inject the Tool response back to the chat context so Gemini can interpret it
-                val updatedContents = contentsList.toMutableList().apply {
-                    // Gemini expects the assistant's intermediate functionCall content first
-                    add(
-                        Content(
-                            role = "model",
-                            parts = listOf(Part(functionCall = functionCall))
-                        )
-                    )
-                    // Then the system's functionResponse
-                    add(
-                        Content(
-                            role = "function",
-                            parts = listOf(
-                                Part(
-                                    functionResponse = FunctionResponse(
-                                        name = toolName,
-                                        response = mapOf("result" to executionResult)
-                                    )
-                                )
-                            )
-                        )
-                    )
+            if (firstPart?.text != null) {
+                try {
+                    val jsonResponse = org.json.JSONObject(firstPart.text)
+                    val responseText = jsonResponse.optString("response", "İşlem tamamlandı efendim.")
+                    val actionObj = jsonResponse.optJSONObject("action")
+                    
+                    if (actionObj != null && actionObj.length() > 0) {
+                        addConsoleLog("Yapay Zeka Aksiyonu Tetiklendi: ${actionObj.optString("intent")}")
+                        val actionResult = toolManager.executeJsonAction(actionObj)
+                        addConsoleLog("Aksiyon Sonucu: $actionResult")
+                    }
+                    
+                    saveAndSpeakAiResponse(responseText)
+                } catch (e: Exception) {
+                    // Fallback if the model still didn't return valid JSON
+                    saveAndSpeakAiResponse(firstPart.text)
                 }
-
-                // Call Gemini again to compile final conversational response
-                val finalRequest = GenerateContentRequest(
-                    contents = updatedContents,
-                    systemInstruction = Content(parts = listOf(Part(text = systemInstruction)))
-                )
-
-                val finalApiResponse = RetrofitClient.service.generateContent(selectedModel.value, apiKey, finalRequest)
-                val finalResponse = finalApiResponse.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                    ?: "Protokol başarıyla tamamlandı efendim."
-
-                saveAndSpeakAiResponse(finalResponse)
-
-            } else if (firstPart?.text != null) {
-                // NORMAL CHAT TEXT RESPONSE
-                saveAndSpeakAiResponse(firstPart.text)
             } else {
                 _orbState.value = OrbState.Error
                 saveAndSpeakAiResponse("Sistem bir anomalilik saptadı efendim. Verileri derleyemedim.")

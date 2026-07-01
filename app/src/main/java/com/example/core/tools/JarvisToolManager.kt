@@ -225,9 +225,70 @@ class JarvisToolManager(
         return listOf(Tool(functionDeclarations = functionDeclarations))
     }
 
+    fun getSystemContextJson(): String {
+        val appList = try {
+            val pm = context.packageManager
+            val mainIntent = Intent(Intent.ACTION_MAIN, null).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
+            val resolvedInfos = pm.queryIntentActivities(mainIntent, 0)
+            resolvedInfos.map {
+                val appLabel = it.loadLabel(pm).toString().replace("\"", "\\\"")
+                val packageName = it.activityInfo.packageName
+                "{\"isim\": \"$appLabel\", \"paket\": \"$packageName\"}"
+            }.distinct().sorted().joinToString(", ")
+        } catch(e: Exception) { "" }
+        
+        val batteryPct = try {
+            val bm = context.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
+            bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        } catch(e: Exception) { 100 }
+        
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        val vol = try { am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) } catch(e: Exception) { 5 }
+        
+        return "{\"yüklü_uygulamalar\": [$appList], \"batarya\": $batteryPct, \"ses_seviyesi\": $vol}"
+    }
+
     /**
-     * Route and execute the appropriate tool function dynamically.
+     * Parse and execute custom JSON action from the new architecture
      */
+    fun executeJsonAction(actionObj: org.json.JSONObject): String {
+        return try {
+            val intent = actionObj.optString("intent", "")
+            val pkg = actionObj.optString("package", "")
+            val query = actionObj.optString("search_query", "")
+            val cmds = actionObj.optJSONArray("system_commands")
+            
+            if (cmds != null) {
+                for (i in 0 until cmds.length()) {
+                    val cmdObj = cmds.optJSONObject(i)
+                    if (cmdObj != null) {
+                        val cmd = cmdObj.optString("command")
+                        val value = cmdObj.optInt("value", -1)
+                        if (cmd == "SET_VOLUME" && value >= 0) {
+                            val am = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+                            val max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+                            val scaled = (value * max) / 10
+                            am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, scaled.coerceIn(0, max), 0)
+                        }
+                    }
+                }
+            }
+
+            when (intent) {
+                "OPEN_AND_PLAY" -> playMusicTool(query, pkg)
+                "OPEN_APP" -> openAppTool(pkg)
+                "SEARCH_VIDEO" -> searchVideoTool(query, pkg)
+                "MAKE_CALL" -> makeCallTool(query, pkg)
+                "BROWSER_SEARCH" -> browserSearchTool(query, pkg)
+                else -> {
+                    // fallbacks based on package if intent is generic
+                    if (pkg.isNotEmpty()) openAppTool(pkg) else "Komut anlaşıldı ancak işleyici bulunamadı."
+                }
+            }
+        } catch (e: Exception) {
+            "JSON Action Error: ${e.localizedMessage}"
+        }
+    }
     suspend fun executeTool(name: String, args: Map<String, String>?): Map<String, String> {
         return try {
             val result = when (name) {
